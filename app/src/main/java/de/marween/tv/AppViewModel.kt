@@ -4,11 +4,16 @@ import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONException
@@ -147,6 +152,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- Erreichbarkeit prüfen ----------
+    /** URL → erreichbar (true) oder offline (false) */
+    val streamStatus = mutableStateMapOf<String, Boolean>()
+    var checkProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
+    private var checkJob: Job? = null
+
+    fun checkStreams(list: List<Channel>, recheck: Boolean = false) {
+        if (recheck) list.forEach { streamStatus.remove(it.url) }
+        val targets = list.filter { it.url.isNotEmpty() && !streamStatus.containsKey(it.url) }.distinctBy { it.url }
+        checkJob?.cancel()
+        if (targets.isEmpty()) { checkProgress = null; return }
+        var done = 0
+        checkProgress = 0 to targets.size
+        checkJob = viewModelScope.launch {
+            val semaphore = Semaphore(16)
+            targets.map { ch ->
+                launch {
+                    val ok = semaphore.withPermit { withContext(Dispatchers.IO) { Http.isReachable(ch) } }
+                    streamStatus[ch.url] = ok
+                    done++
+                    checkProgress = done to targets.size
+                }
+            }.joinAll()
+            checkProgress = null
+        }
+    }
+
+    fun cancelCheck() {
+        checkJob?.cancel()
+        checkProgress = null
+    }
+
     // ---------- Öffentliche Listen durchsuchen ----------
     var searchQuery by mutableStateOf("")
     var searchResults by mutableStateOf<Loadable<List<Channel>>>(Loadable.Idle); private set
@@ -210,6 +247,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         content = Loadable.Idle
         episodesFor = null
         episodes = Loadable.Idle
+        streamStatus.clear()
     }
 
     companion object {

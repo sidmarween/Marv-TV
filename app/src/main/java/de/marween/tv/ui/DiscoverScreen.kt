@@ -102,7 +102,11 @@ fun DiscoverScreen(vm: AppViewModel, onOpenList: (Playlist) -> Unit) {
                     }
                     is Loadable.Error -> item { Text(results.message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
                     is Loadable.Ready -> {
-                        val list = results.value
+                        val all = results.value
+                        val list = all.filter { vm.streamStatus[it.url] != false }
+                        if (all.isNotEmpty()) {
+                            item { CheckBar(vm, all, onlyReachable = true, showFilter = false, onOnlyReachable = {}) }
+                        }
                         if (list.isEmpty()) {
                             item { Text("Keine Sender gefunden.", modifier = Modifier.padding(16.dp)) }
                         } else {
@@ -120,6 +124,7 @@ fun DiscoverScreen(vm: AppViewModel, onOpenList: (Playlist) -> Unit) {
                                     isFavorite = vm.isFavorite(ch),
                                     onClick = { PlayQueue.start(context, list, i) },
                                     onToggleFavorite = { vm.toggleFavorite(ch) },
+                                    subtitle = statusLabel(vm, ch) + ch.group,
                                 )
                             }
                         }
@@ -142,8 +147,8 @@ fun DiscoverScreen(vm: AppViewModel, onOpenList: (Playlist) -> Unit) {
                 items(PublicSources.collections) { SourceRow(vm, it, onOpenList) }
                 item {
                     Text(
-                        "Hinweis: Hier erscheinen nur Sender, die ihre Streams selbst frei anbieten. " +
-                            "Einzelne Sender können zeitweise offline oder nur in bestimmten Ländern abrufbar sein.",
+                        "Hinweis: Die öffentlichen Listen werden von Freiwilligen gepflegt – viele Links sind veraltet " +
+                            "oder zeitweise offline. Mit „Sender prüfen“ in einer Liste blendest du nicht erreichbare Sender aus.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 16.dp, start = 6.dp, end = 6.dp),

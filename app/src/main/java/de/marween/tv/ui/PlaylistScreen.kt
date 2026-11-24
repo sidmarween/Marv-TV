@@ -27,7 +27,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,6 +54,7 @@ import de.marween.tv.Loadable
 import de.marween.tv.PlayQueue
 import de.marween.tv.Playlist
 import de.marween.tv.PlaylistContent
+import de.marween.tv.PlaylistType
 import de.marween.tv.Section
 import de.marween.tv.newId
 
@@ -96,8 +99,14 @@ private fun ContentView(vm: AppViewModel, playlist: Playlist, content: PlaylistC
     var query by remember(playlist.id, sectionIdx) { mutableStateOf("") }
 
     val counts = remember(section) { section.items.groupingBy { it.group }.eachCount() }
-    val filtered = remember(section, category, query) {
+    val canCheck = playlist.type == PlaylistType.M3U && section.kind == Kind.LIVE
+    var onlyReachable by remember(playlist.id) { mutableStateOf(true) }
+    val statusCount = vm.streamStatus.size
+    val visible = remember(section, category, query) {
         section.items.filter { (category == null || it.group == category) && (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) }
+    }
+    val filtered = remember(visible, onlyReachable, statusCount, canCheck) {
+        if (canCheck && onlyReachable) visible.filter { vm.streamStatus[it.url] != false } else visible
     }
 
     val onItemClick: (Int) -> Unit = { i ->
@@ -137,6 +146,9 @@ private fun ContentView(vm: AppViewModel, playlist: Playlist, content: PlaylistC
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (canCheck) {
+            CheckBar(vm, visible, onlyReachable) { onlyReachable = it }
+        }
         Spacer(Modifier.padding(4.dp))
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -171,6 +183,63 @@ private fun ContentView(vm: AppViewModel, playlist: Playlist, content: PlaylistC
 }
 
 @Composable
+fun CheckBar(
+    vm: AppViewModel,
+    list: List<Channel>,
+    onlyReachable: Boolean,
+    showFilter: Boolean = true,
+    onOnlyReachable: (Boolean) -> Unit,
+) {
+    val progress = vm.checkProgress
+    val checked = list.count { vm.streamStatus.containsKey(it.url) }
+    val ok = list.count { vm.streamStatus[it.url] == true }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (progress == null) {
+                OutlinedButton(
+                    onClick = { vm.checkStreams(list.take(2000), recheck = checked > 0) },
+                    modifier = Modifier.focusHighlight(),
+                ) { Text(if (checked == 0) "Sender prüfen" else "Erneut prüfen") }
+            } else {
+                OutlinedButton(onClick = { vm.cancelCheck() }, modifier = Modifier.focusHighlight()) { Text("Prüfung abbrechen") }
+            }
+            if (checked > 0 && showFilter) {
+                FilterChip(
+                    selected = onlyReachable,
+                    onClick = { onOnlyReachable(!onlyReachable) },
+                    label = { Text("Nur erreichbare") },
+                    modifier = Modifier.focusHighlight(),
+                )
+            }
+            if (checked > 0) {
+                Text(
+                    "$ok von $checked erreichbar",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (progress != null) {
+            LinearProgressIndicator(
+                progress = { if (progress.second == 0) 0f else progress.first.toFloat() / progress.second },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
+            Text(
+                "Prüfe Sender … ${progress.first} von ${progress.second}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+fun statusLabel(vm: AppViewModel, ch: Channel): String = when (vm.streamStatus[ch.url]) {
+    true -> "✓ erreichbar · "
+    false -> "✗ offline · "
+    null -> ""
+}
+
+@Composable
 private fun CategoryItem(name: String, count: Int, selected: Boolean, onClick: () -> Unit) {
     Card(
         onClick = onClick,
@@ -200,7 +269,7 @@ private fun ItemList(vm: AppViewModel, list: List<Channel>, section: Section, mo
                 isFavorite = vm.isFavorite(ch),
                 onClick = { onItemClick(i) },
                 onToggleFavorite = { vm.toggleFavorite(ch) },
-                subtitle = if (section.kind == Kind.LIVE) "${i + 1} · ${ch.group}" else ch.group,
+                subtitle = statusLabel(vm, ch) + if (section.kind == Kind.LIVE) "${i + 1} · ${ch.group}" else ch.group,
             )
         }
     }

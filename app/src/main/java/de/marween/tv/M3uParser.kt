@@ -26,7 +26,7 @@ object M3uParser {
                     group = (attrs["group-title"] ?: "").replace(";", " · ")
                     attrs["http-user-agent"]?.let { ua = it }
                     attrs["http-referrer"]?.let { ref = it }
-                    name = extractName(line).ifBlank { attrs["tvg-name"] ?: "Unbenannt" }
+                    name = germanize(extractName(line).ifBlank { attrs["tvg-name"] ?: "Unbenannt" })
                 }
                 line.startsWith("#EXTGRP:", ignoreCase = true) -> extGrp = line.substringAfter(':').trim()
                 line.startsWith("#EXTVLCOPT:", ignoreCase = true) -> {
@@ -61,6 +61,10 @@ object M3uParser {
         }
         return result
     }
+
+    private fun germanize(name: String): String = name
+        .replace("[Geo-blocked]", "[nur in bestimmten Ländern]")
+        .replace("[Not 24/7]", "[nicht durchgehend]")
 
     /** Der Name steht nach dem ersten Komma außerhalb von Anführungszeichen. */
     private fun extractName(line: String): String {

@@ -45,6 +45,7 @@ class PlayerActivity : ComponentActivity() {
     private var items: List<Channel> = emptyList()
     private var epgJob: Job? = null
     private var xtream: XtreamClient? = null
+    private val formatRetried = HashSet<Int>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +101,10 @@ class PlayerActivity : ComponentActivity() {
                     exo.prepare()
                     return
                 }
+                if (isFormatError(error) && formatRetried.add(currentIndex())) {
+                    retryWithOtherFormat(currentIndex())
+                    return
+                }
                 val hint = if (isLive() && items.size > 1) "\n▲ / ▼ für einen anderen Sender" else ""
                 showOverlay("Wiedergabe nicht möglich\n${errorText(error)}$hint", 10_000)
             }
@@ -122,6 +127,31 @@ class PlayerActivity : ComponentActivity() {
         if (ch.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) b.setMimeType(MimeTypes.APPLICATION_M3U8)
         if (ch.url.substringBefore('?').endsWith(".mpd", ignoreCase = true)) b.setMimeType(MimeTypes.APPLICATION_MPD)
         return b.build()
+    }
+
+    private fun isFormatError(e: PlaybackException): Boolean = e.errorCode in setOf(
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+    )
+
+    /** Stream mit dem jeweils anderen Format (HLS ↔ MPEG-TS) erneut versuchen. */
+    private fun retryWithOtherFormat(index: Int) {
+        val p = player ?: return
+        val ch = items.getOrNull(index) ?: return
+        val wasHls = p.currentMediaItem?.localConfiguration?.mimeType == MimeTypes.APPLICATION_M3U8
+        val item = MediaItem.Builder()
+            .setUri(ch.url)
+            .setMediaId(ch.key)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(ch.name).build())
+            .setMimeType(if (wasHls) MimeTypes.VIDEO_MP2T else MimeTypes.APPLICATION_M3U8)
+            .build()
+        p.replaceMediaItem(index, item)
+        p.seekToDefaultPosition(index)
+        p.prepare()
+        p.play()
     }
 
     private fun applyHeaders(ch: Channel) {

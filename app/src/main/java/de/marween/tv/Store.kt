@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 /** Einfache lokale Speicherung (Listen, Favoriten, Verlauf, Einstellungen). */
 object Store {
-    const val DEFAULT_UA = "Mozilla/5.0 (Linux; Android) MarvTV/1.0"
+    const val DEFAULT_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
 
     private lateinit var prefs: SharedPreferences
 
