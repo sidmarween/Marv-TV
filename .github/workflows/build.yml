@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,7 +21,17 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk MarvTV.apk
       - uses: actions/upload-artifact@v4
         with:
           name: MarvTV-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: MarvTV.apk
+      - name: Als Release veröffentlichen
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v1.0.${{ github.run_number }}" MarvTV.apk \
+            --title "Marv TV 1.0 (Build ${{ github.run_number }})" \
+            --notes "Zum Installieren MarvTV.apk herunterladen." \
+            --latest
