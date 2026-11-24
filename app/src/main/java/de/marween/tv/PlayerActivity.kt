@@ -107,6 +107,15 @@ class PlayerActivity : ComponentActivity() {
                 }
                 val hint = if (isLive() && items.size > 1) "\n▲ / ▼ für einen anderen Sender" else ""
                 showOverlay("Wiedergabe nicht möglich\n${errorText(error)}$hint", 10_000)
+                // Genauere Ursache im Hintergrund ermitteln
+                val i = currentIndex()
+                val ch = items.getOrNull(i)
+                if (ch != null) {
+                    lifecycleScope.launch {
+                        val reason = withContext(Dispatchers.IO) { Http.diagnose(ch) }
+                        if (reason != null && currentIndex() == i) showOverlay("Wiedergabe nicht möglich\n$reason$hint", 10_000)
+                    }
+                }
             }
         })
 
@@ -230,7 +239,8 @@ class PlayerActivity : ComponentActivity() {
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
-        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> "Das Stream-Format wird nicht unterstützt. Tipp: In den Einstellungen das Live-Format wechseln."
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> if (xtream != null) "Das Stream-Format wird nicht unterstützt. Tipp: In den Einstellungen das Live-Format wechseln."
+            else "Das Stream-Format wird nicht unterstützt."
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
         PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
         PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES -> "Video- oder Tonformat wird von diesem Gerät nicht unterstützt."

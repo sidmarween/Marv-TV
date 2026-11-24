@@ -84,6 +84,32 @@ object Http {
         return true
     }
 
+    /** Findet heraus, warum ein Stream nicht abspielbar ist (für verständliche Fehlermeldungen). */
+    fun diagnose(ch: Channel): String? = try {
+        val headers = if (ch.referrer.isNotBlank()) mapOf("Referer" to ch.referrer) else emptyMap()
+        val (input, _) = open(ch.url, ch.userAgent.ifBlank { Store.userAgent }, headers, 7_000, 8_000)
+        val head = input.use { stream ->
+            val buf = ByteArray(2048)
+            val n = stream.read(buf)
+            if (n <= 0) "" else String(buf, 0, n, Charsets.ISO_8859_1)
+        }.trimStart().lowercase()
+        when {
+            head.isEmpty() -> "Der Sender liefert keine Daten – er ist vermutlich offline."
+            head.startsWith("<!doctype html") || head.startsWith("<html") || head.startsWith("<") ->
+                "Der Server liefert eine Webseite statt eines Videos – der Sender ist offline, gesperrt oder die Adresse veraltet."
+            else -> null
+        }
+    } catch (e: IOException) {
+        val m = e.message ?: ""
+        when {
+            m.contains("401") || m.contains("403") -> "Der Server verlangt eine Anmeldung oder sperrt den Zugriff."
+            m.contains("404") -> "Den Sender gibt es unter dieser Adresse nicht mehr."
+            else -> "Der Sender ist nicht erreichbar ($m)."
+        }
+    } catch (e: Exception) {
+        "Der Sender ist nicht erreichbar – vermutlich offline."
+    }
+
     private fun message(code: Int): String = when (code) {
         401, 403 -> "Zugriff verweigert (HTTP $code) – Zugangsdaten oder Abo prüfen"
         404 -> "Nicht gefunden (HTTP 404) – Adresse prüfen"
