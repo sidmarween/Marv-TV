@@ -12,15 +12,29 @@ android {
         applicationId = "de.marween.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Bei jedem GitHub-Build eine höhere Versionsnummer, damit Updates klappen
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.0.$build"
+    }
+
+    // Fester Schlüssel: Jede Version ist gleich signiert und lässt sich drüber installieren
+    signingConfigs {
+        create("marv") {
+            storeFile = file("marvtv.jks")
+            storePassword = "marvtv-key"
+            keyAlias = "marvtv"
+            keyPassword = "marvtv-key"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Zum einfachen Installieren mit dem Debug-Schlüssel signiert
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("marv")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("marv")
         }
     }
 
@@ -34,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     lint {
         abortOnError = false

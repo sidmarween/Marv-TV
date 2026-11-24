@@ -115,7 +115,7 @@ fun SettingsScreen(vm: AppViewModel) {
         HorizontalDivider()
         Text("Über Marv TV", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Version 1.0\n© marween\n\n" +
+            "Version ${de.marween.tv.BuildConfig.VERSION_NAME}\n© marween\n\n" +
                 "Marv TV enthält selbst keine Sender. Die App spielt die Listen ab, die du hinzufügst, " +
                 "sowie frei zugängliche öffentliche Sammlungen (iptv-org, Free-TV).",
             style = MaterialTheme.typography.bodyMedium,
