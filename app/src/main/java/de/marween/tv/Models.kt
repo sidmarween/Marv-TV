@@ -14,6 +14,7 @@ data class Playlist(
     val username: String = "",
     val password: String = "",
     val isPublic: Boolean = false,
+    val epgUrl: String = "",     // eigene EPG-Adresse (optional)
 ) {
     val subtitle: String
         get() = when {
@@ -26,6 +27,7 @@ data class Playlist(
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("type", type.name); put("url", url)
         put("username", username); put("password", password); put("isPublic", isPublic)
+        put("epgUrl", epgUrl)
     }
 
     companion object {
@@ -37,6 +39,7 @@ data class Playlist(
             username = o.optString("username"),
             password = o.optString("password"),
             isPublic = o.optBoolean("isPublic"),
+            epgUrl = o.optString("epgUrl"),
         )
     }
 }
@@ -55,6 +58,7 @@ data class Channel(
     val referrer: String = "",
     val playlistId: String = "",
     val plot: String = "",
+    val epgId: String = "",       // tvg-id bzw. epg_channel_id
 ) {
     val key: String get() = if (url.isNotEmpty()) url else "$playlistId/series/$streamId"
 
@@ -62,6 +66,7 @@ data class Channel(
         put("name", name); put("url", url); put("logo", logo); put("group", group)
         put("kind", kind.name); put("streamId", streamId); put("userAgent", userAgent)
         put("referrer", referrer); put("playlistId", playlistId); put("plot", plot)
+        put("epgId", epgId)
     }
 
     companion object {
@@ -76,6 +81,7 @@ data class Channel(
             referrer = o.optString("referrer"),
             playlistId = o.optString("playlistId"),
             plot = o.optString("plot"),
+            epgId = o.optString("epgId"),
         )
     }
 }
@@ -88,7 +94,7 @@ data class Section(
     val items: List<Channel>,
 )
 
-data class PlaylistContent(val sections: List<Section>, val info: String = "")
+data class PlaylistContent(val sections: List<Section>, val info: String = "", val epgUrls: List<String> = emptyList())
 
 fun newId(): String = UUID.randomUUID().toString()
 

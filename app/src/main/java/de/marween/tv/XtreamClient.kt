@@ -86,6 +86,7 @@ class XtreamClient(server: String, private val username: String, private val pas
                         kind = Kind.LIVE,
                         streamId = id,
                         playlistId = playlistId,
+                        epgId = o.optString("epg_channel_id").let { if (it == "null") "" else it },
                     )
                 )
             }
@@ -191,6 +192,9 @@ class XtreamClient(server: String, private val username: String, private val pas
             .sortedBy { it.key.toIntOrNull() ?: Int.MAX_VALUE }
             .map { "Staffel ${it.key}" to it.value.toList() }
     }
+
+    /** Vollständiges TV-Programm des Anbieters (XMLTV) */
+    val xmltvUrl: String get() = "$base/xmltv.php?username=${enc(username)}&password=${enc(password)}"
 
     /** Kurzes TV-Programm: was läuft jetzt und danach. */
     fun nowPlaying(streamId: Int): String? {

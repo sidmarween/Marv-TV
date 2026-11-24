@@ -3,6 +3,7 @@ package de.marween.tv
 import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var hideAdult by mutableStateOf(Store.hideAdult); private set
     var liveFormat by mutableStateOf(Store.liveFormat); private set
     var userAgent by mutableStateOf(Store.userAgent); private set
+    var epgEnabled by mutableStateOf(Store.epgEnabled); private set
+
+    fun updateEpgEnabled(v: Boolean) { Store.epgEnabled = v; epgEnabled = v }
 
     fun updateHideAdult(v: Boolean) { Store.hideAdult = v; hideAdult = v; clearCache() }
     fun updateLiveFormat(v: String) { Store.liveFormat = v; liveFormat = v; clearCache() }
@@ -94,19 +98,85 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var content by mutableStateOf<Loadable<PlaylistContent>>(Loadable.Idle); private set
     var contentFor by mutableStateOf<String?>(null); private set
     private val cache = HashMap<String, PlaylistContent>()
+    private var openedPlaylist: Playlist? = null
 
     fun open(p: Playlist, force: Boolean = false) {
         if (!force && contentFor == p.id && content is Loadable.Ready<*>) return
         contentFor = p.id
-        if (!force) cache[p.id]?.let { content = Loadable.Ready(it); return }
+        openedPlaylist = p
+        if (!force) cache[p.id]?.let { content = Loadable.Ready(it); loadEpg(p, it); return }
         content = Loadable.Loading
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { loadContent(p) } }
             if (contentFor != p.id) return@launch
             result
-                .onSuccess { cache[p.id] = it; content = Loadable.Ready(it) }
+                .onSuccess { cache[p.id] = it; content = Loadable.Ready(it); loadEpg(p, it, force) }
                 .onFailure { content = Loadable.Error(friendly(it)) }
         }
+    }
+
+    // ---------- TV-Programm (EPG) ----------
+    var epgVersion by mutableIntStateOf(0); private set
+    var epgStatus by mutableStateOf<String?>(null); private set
+
+    private fun epgUrlsFor(p: Playlist, content: PlaylistContent): List<String> {
+        val urls = ArrayList<String>()
+        p.epgUrl.split(',', ';', '\n').map { it.trim() }.filter { it.startsWith("http") }.forEach { urls.add(it) }
+        if (p.type == PlaylistType.XTREAM) {
+            urls.add(XtreamClient(p.url, p.username, p.password).xmltvUrl)
+        } else {
+            val header = content.epgUrls
+            // Aus großen Sammel-Angaben nur deutsche Quellen bzw. die ersten zwei nehmen
+            val german = header.filter { it.contains("_DE", true) || it.contains("germany", true) || it.contains("/de.", true) }
+            urls.addAll(if (german.isNotEmpty()) german else header.take(2))
+            urls.add(Epg.DEFAULT_DE)
+        }
+        return urls.distinct()
+    }
+
+    fun loadEpg(p: Playlist, content: PlaylistContent, force: Boolean = false) {
+        val live = content.sections.filter { it.kind == Kind.LIVE }.flatMap { it.items }
+        loadEpgUrls(epgUrlsFor(p, content), live, force)
+    }
+
+    /** TV-Programm für einzelne Sender (Favoriten, Verlauf, Suchergebnisse). */
+    fun loadEpgFor(channels: List<Channel>) {
+        val live = channels.filter { it.kind == Kind.LIVE }
+        if (live.isEmpty()) return
+        val urls = ArrayList<String>()
+        live.mapNotNull { it.playlistId.takeIf { id -> id.isNotBlank() } }.distinct().forEach { id ->
+            playlists.find { it.id == id }?.let { p ->
+                p.epgUrl.split(',', ';').map { it.trim() }.filter { it.startsWith("http") }.forEach { urls.add(it) }
+                if (p.type == PlaylistType.XTREAM) urls.add(XtreamClient(p.url, p.username, p.password).xmltvUrl)
+            }
+        }
+        urls.add(Epg.DEFAULT_DE)
+        loadEpgUrls(urls.distinct(), live, false)
+    }
+
+    private fun loadEpgUrls(all: List<String>, live: List<Channel>, force: Boolean) {
+        if (!Store.epgEnabled || live.isEmpty()) return
+        val urls = all.filter { force || Epg.needsLoad(it, live) }
+        if (urls.isEmpty()) return
+        epgStatus = "TV-Programm wird geladen …"
+        viewModelScope.launch {
+            var failed = 0
+            val dir = getApplication<Application>().cacheDir
+            for (url in urls) {
+                val ok = withContext(Dispatchers.IO) { runCatching { Epg.load(url, dir, live, force) }.isSuccess }
+                if (!ok) failed++
+                epgVersion++
+            }
+            epgStatus = if (failed == urls.size) "TV-Programm konnte nicht geladen werden." else null
+        }
+    }
+
+    fun reloadEpg() {
+        Epg.clear(getApplication<Application>().cacheDir)
+        epgVersion++
+        val p = openedPlaylist ?: return
+        val c = content
+        if (c is Loadable.Ready) loadEpg(p, c.value, force = true)
     }
 
     private fun loadContent(p: Playlist): PlaylistContent = when (p.type) {
@@ -118,14 +188,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 Http.openStream(p.url)
             }
-            val all = input.bufferedReader().use { M3uParser.parse(it, p.id) }
-            val items = if (Store.hideAdult) all.filterNot { isAdult(it.group) || isAdult(it.name) } else all
-            if (items.isEmpty()) throw IOException("Die Liste enthält keine abspielbaren Einträge.")
+            var header: Map<String, String> = emptyMap()
+            val all = input.bufferedReader().use { M3uParser.parse(it, p.id) { h -> header = h } }
+            val filteredItems = if (Store.hideAdult) all.filterNot { isAdult(it.group) || isAdult(it.name) } else all
+            if (filteredItems.isEmpty()) throw IOException("Die Liste enthält keine abspielbaren Einträge.")
+            val items = withLogos(filteredItems)
+            val epgUrls = (header["x-tvg-url"] ?: header["url-tvg"] ?: "")
+                .split(',').map { it.trim() }.filter { it.startsWith("http") }
             val sections = listOfNotNull(
                 section(Kind.LIVE, "Live-TV", items.filter { it.kind == Kind.LIVE }),
                 section(Kind.MOVIE, "Filme & Serien", items.filter { it.kind == Kind.MOVIE }),
             )
-            PlaylistContent(sections, "${items.size} Einträge")
+            PlaylistContent(sections, "${items.size} Einträge", epgUrls)
+        }
+    }
+
+    /** Fehlende Senderlogos aus der iptv-org-Datenbank ergänzen. */
+    private fun withLogos(items: List<Channel>): List<Channel> {
+        if (items.none { it.logo.isBlank() && it.epgId.isNotBlank() }) return items
+        val logos = runCatching { Logos.get(getApplication<Application>().cacheDir) }.getOrNull() ?: return items
+        return items.map { ch ->
+            if (ch.logo.isBlank() && ch.epgId.isNotBlank()) {
+                logos[Epg.normId(ch.epgId)]?.let { ch.copy(logo = it) } ?: ch
+            } else ch
         }
     }
 
@@ -234,7 +319,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         val all = file.bufferedReader().use { M3uParser.parse(it, "public") }
-        return if (Store.hideAdult) all.filterNot { isAdult(it.group) || isAdult(it.name) } else all
+        return withLogos(if (Store.hideAdult) all.filterNot { isAdult(it.group) || isAdult(it.name) } else all)
     }
 
     private fun normalize(s: String) = s.lowercase(Locale.GERMAN).filter { it.isLetterOrDigit() }
@@ -248,6 +333,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         episodesFor = null
         episodes = Loadable.Idle
         streamStatus.clear()
+        Logos.clear(getApplication<Application>().cacheDir)
     }
 
     companion object {

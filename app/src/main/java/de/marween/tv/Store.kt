@@ -41,6 +41,10 @@ object Store {
         get() = prefs.getString("liveFormat", "ts") ?: "ts"
         set(v) = prefs.edit().putString("liveFormat", v).apply()
 
+    var epgEnabled: Boolean
+        get() = prefs.getBoolean("epgEnabled", true)
+        set(v) = prefs.edit().putBoolean("epgEnabled", v).apply()
+
     var hideAdult: Boolean
         get() = prefs.getBoolean("hideAdult", true)
         set(v) = prefs.edit().putBoolean("hideAdult", v).apply()

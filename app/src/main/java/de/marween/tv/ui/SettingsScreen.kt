@@ -64,6 +64,29 @@ fun SettingsScreen(vm: AppViewModel) {
             Switch(checked = vm.hideAdult, onCheckedChange = null)
         }
 
+        Row(
+            Modifier.fillMaxWidth()
+                .focusHighlight()
+                .toggleable(value = vm.epgEnabled, onValueChange = { vm.updateEpgEnabled(it) })
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("TV-Programm (EPG) laden", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Zeigt „Jetzt“ und „Danach“ bei den Sendern. Quellen: deine Liste, dein Xtream-Anbieter " +
+                        "oder das deutsche Programm von epgshare01.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = vm.epgEnabled, onCheckedChange = null)
+        }
+        OutlinedButton(onClick = {
+            vm.reloadEpg()
+            Toast.makeText(context, "TV-Programm wird beim nächsten Öffnen einer Liste neu geladen", Toast.LENGTH_SHORT).show()
+        }, modifier = Modifier.focusHighlight()) { Text("TV-Programm neu laden") }
+
         HorizontalDivider()
         Text("Live-Format bei Xtream", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

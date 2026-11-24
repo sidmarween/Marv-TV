@@ -115,9 +115,11 @@ private fun ContentView(vm: AppViewModel, playlist: Playlist, content: PlaylistC
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-        if (content.info.isNotBlank()) {
+        val epgStatus = vm.epgStatus
+        val infoLine = listOfNotNull(content.info.ifBlank { null }, epgStatus).joinToString("  ·  ")
+        if (infoLine.isNotBlank()) {
             Text(
-                content.info,
+                infoLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 8.dp, bottom = 6.dp),
@@ -262,6 +264,7 @@ private fun ItemList(vm: AppViewModel, list: List<Channel>, section: Section, mo
         Column(modifier) { MessageView("Keine Treffer.") }
         return
     }
+    val now = if (section.kind == Kind.LIVE) rememberEpgNow(vm) else 0L
     LazyColumn(modifier.fillMaxHeight(), contentPadding = PaddingValues(bottom = 24.dp)) {
         itemsIndexed(list) { i, ch ->
             ChannelRow(
@@ -270,6 +273,7 @@ private fun ItemList(vm: AppViewModel, list: List<Channel>, section: Section, mo
                 onClick = { onItemClick(i) },
                 onToggleFavorite = { vm.toggleFavorite(ch) },
                 subtitle = statusLabel(vm, ch) + if (section.kind == Kind.LIVE) "${i + 1} · ${ch.group}" else ch.group,
+                now = now,
             )
         }
     }

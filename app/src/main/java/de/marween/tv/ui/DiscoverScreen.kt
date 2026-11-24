@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +53,10 @@ fun DiscoverScreen(vm: AppViewModel, onOpenList: (Playlist) -> Unit) {
     val context = LocalContext.current
     val results = vm.searchResults
     val q = vm.searchQuery.trim()
+    val now = rememberEpgNow(vm)
+    if (results is Loadable.Ready) {
+        LaunchedEffect(results) { vm.loadEpgFor(results.value.take(500)) }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Text(
@@ -125,6 +130,7 @@ fun DiscoverScreen(vm: AppViewModel, onOpenList: (Playlist) -> Unit) {
                                     onClick = { PlayQueue.start(context, list, i) },
                                     onToggleFavorite = { vm.toggleFavorite(ch) },
                                     subtitle = statusLabel(vm, ch) + ch.group,
+                                    now = now,
                                 )
                             }
                         }

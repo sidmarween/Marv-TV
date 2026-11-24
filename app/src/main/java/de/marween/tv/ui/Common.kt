@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,10 +22,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,10 +35,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,7 +58,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import de.marween.tv.AppViewModel
 import de.marween.tv.Channel
+import de.marween.tv.Epg
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import de.marween.tv.Kind
 
 /** Deutlich sichtbarer Fokus-Rahmen für die Bedienung mit der Fernbedienung. */
@@ -119,6 +133,24 @@ fun initials(name: String): String =
     name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2)
         .joinToString("") { it.take(1).uppercase() }.ifEmpty { "TV" }
 
+/** Aktuelle Uhrzeit für das TV-Programm; aktualisiert sich jede halbe Minute und wenn neues EPG geladen wurde. */
+@Composable
+fun rememberEpgNow(vm: AppViewModel): Long {
+    val tick by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(30_000)
+            value = System.currentTimeMillis()
+        }
+    }
+    val version = vm.epgVersion
+    return remember(tick, version) { System.currentTimeMillis() }
+}
+
+private val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
+private val dayFormat = SimpleDateFormat("EEEE, d. MMMM", Locale.GERMANY)
+
+fun formatTime(ms: Long): String = timeFormat.format(Date(ms))
+
 @Composable
 fun ChannelRow(
     ch: Channel,
@@ -126,7 +158,13 @@ fun ChannelRow(
     onClick: () -> Unit,
     onToggleFavorite: (() -> Unit)?,
     subtitle: String = ch.group,
+    now: Long = 0L,
 ) {
+    val showEpg = now > 0 && ch.kind == Kind.LIVE
+    val (cur, next) = if (showEpg) Epg.nowNext(ch, now) else (null to null)
+    val logo = ch.logo.ifBlank { if (showEpg) Epg.icon(ch) ?: "" else "" }
+    var showGuide by remember { mutableStateOf(false) }
+
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -138,10 +176,33 @@ fun ChannelRow(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
         ) {
             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Logo(ch.logo, ch.name, 48.dp)
+                Logo(logo, ch.name, 52.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(ch.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (cur != null) {
+                        Text(
+                            "${formatTime(cur.start)}  ${cur.title}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val span = (cur.end - cur.start).coerceAtLeast(1)
+                        LinearProgressIndicator(
+                            progress = { ((now - cur.start).toFloat() / span).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).height(3.dp),
+                        )
+                    }
+                    if (next != null) {
+                        Text(
+                            "Danach ${formatTime(next.start)}  ${next.title}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     if (subtitle.isNotBlank()) {
                         Text(
                             subtitle,
@@ -159,6 +220,11 @@ fun ChannelRow(
                 )
             }
         }
+        if (cur != null || next != null) {
+            IconButton(onClick = { showGuide = true }, modifier = Modifier.focusHighlight(CircleShape)) {
+                Icon(Icons.Default.DateRange, contentDescription = "TV-Programm")
+            }
+        }
         if (onToggleFavorite != null) {
             IconButton(onClick = onToggleFavorite, modifier = Modifier.focusHighlight(CircleShape)) {
                 Icon(
@@ -169,6 +235,64 @@ fun ChannelRow(
             }
         }
     }
+
+    if (showGuide) {
+        ProgrammeDialog(ch, now, onPlay = { showGuide = false; onClick() }, onDismiss = { showGuide = false })
+    }
+}
+
+/** TV-Programm eines Senders (ab der laufenden Sendung). */
+@Composable
+fun ProgrammeDialog(ch: Channel, now: Long, onPlay: () -> Unit, onDismiss: () -> Unit) {
+    val list = remember(ch, now) { Epg.programmes(ch).filter { it.end > now } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("TV-Programm: ${ch.name}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            if (list.isEmpty()) {
+                Text("Kein TV-Programm vorhanden.")
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    itemsIndexed(list) { i, p ->
+                        val day = dayFormat.format(Date(p.start))
+                        val prevDay = list.getOrNull(i - 1)?.let { dayFormat.format(Date(it.start)) }
+                        Column {
+                            if (i == 0 || day != prevDay) {
+                                Text(
+                                    day,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                                )
+                            }
+                            val running = p.start <= now
+                            Text(
+                                "${formatTime(p.start)} – ${formatTime(p.end)}   ${p.title}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = if (running) FontWeight.Bold else FontWeight.Normal,
+                                color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (p.desc.isNotBlank()) {
+                                Text(
+                                    p.desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onPlay, modifier = Modifier.focusHighlight()) { Text("Ansehen") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.focusHighlight()) { Text("Schließen") }
+        },
+    )
 }
 
 @Composable

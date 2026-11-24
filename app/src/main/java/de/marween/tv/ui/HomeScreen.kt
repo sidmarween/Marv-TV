@@ -187,6 +187,7 @@ fun AddPlaylistDialog(initial: Playlist?, onDismiss: () -> Unit, onSave: (Playli
     var user by remember { mutableStateOf(initial?.username ?: "") }
     var pass by remember { mutableStateOf(initial?.password ?: "") }
     var showPass by remember { mutableStateOf(false) }
+    var epgUrl by remember { mutableStateOf(initial?.epgUrl ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -233,7 +234,7 @@ fun AddPlaylistDialog(initial: Playlist?, onDismiss: () -> Unit, onSave: (Playli
                     PlaylistType.XTREAM, s, user.trim(), pass.trim())
             }
         }
-        onSave(result)
+        onSave(result.copy(epgUrl = epgUrl.trim()))
     }
 
     AlertDialog(
@@ -312,6 +313,15 @@ fun AddPlaylistDialog(initial: Playlist?, onDismiss: () -> Unit, onSave: (Playli
                         )
                     }
                 }
+                OutlinedTextField(
+                    value = epgUrl, onValueChange = { epgUrl = it },
+                    label = { Text("EPG-Adresse (optional)") },
+                    placeholder = { Text("https://…/epg.xml.gz") },
+                    supportingText = { Text("Leer lassen: TV-Programm wird automatisch gesucht.") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },

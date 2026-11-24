@@ -7,7 +7,7 @@ object M3uParser {
     private val attrRegex = Regex("""([A-Za-z0-9_-]+)="([^"]*)"""")
     private val videoExt = setOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "m4v", "webm", "mpg", "mpeg")
 
-    fun parse(reader: BufferedReader, playlistId: String): List<Channel> {
+    fun parse(reader: BufferedReader, playlistId: String, onHeader: (Map<String, String>) -> Unit = {}): List<Channel> {
         val result = ArrayList<Channel>()
         var name: String? = null
         var logo = ""
@@ -15,14 +15,18 @@ object M3uParser {
         var extGrp = ""
         var ua = ""
         var ref = ""
+        var epgId = ""
 
         reader.lineSequence().forEach { raw ->
             val line = raw.trim()
             when {
                 line.isEmpty() -> Unit
+                line.startsWith("#EXTM3U", ignoreCase = true) ->
+                    onHeader(attrRegex.findAll(line).associate { it.groupValues[1].lowercase() to it.groupValues[2] })
                 line.startsWith("#EXTINF", ignoreCase = true) -> {
                     val attrs = attrRegex.findAll(line).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
                     logo = attrs["tvg-logo"] ?: ""
+                    epgId = attrs["tvg-id"] ?: ""
                     group = (attrs["group-title"] ?: "").replace(";", " · ")
                     attrs["http-user-agent"]?.let { ua = it }
                     attrs["http-referrer"]?.let { ref = it }
@@ -52,10 +56,11 @@ object M3uParser {
                                 userAgent = ua,
                                 referrer = ref,
                                 playlistId = playlistId,
+                                epgId = epgId,
                             )
                         )
                     }
-                    name = null; logo = ""; group = ""; extGrp = ""; ua = ""; ref = ""
+                    name = null; logo = ""; group = ""; extGrp = ""; ua = ""; ref = ""; epgId = ""
                 }
             }
         }

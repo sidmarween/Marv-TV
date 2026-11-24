@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -27,6 +28,8 @@ fun FavoritesScreen(vm: AppViewModel, onOpenSeries: (Playlist, Channel) -> Unit)
     val context = LocalContext.current
     val favs = vm.favorites.toList()
     val recents = vm.recents.toList()
+    val now = rememberEpgNow(vm)
+    LaunchedEffect(favs.size, recents.size) { vm.loadEpgFor(favs + recents) }
 
     fun open(list: List<Channel>, i: Int) {
         val ch = list[i]
@@ -58,7 +61,7 @@ fun FavoritesScreen(vm: AppViewModel, onOpenSeries: (Playlist, Channel) -> Unit)
             }
         } else {
             itemsIndexed(favs) { i, ch ->
-                ChannelRow(ch, isFavorite = true, onClick = { open(favs, i) }, onToggleFavorite = { vm.toggleFavorite(ch) })
+                ChannelRow(ch, isFavorite = true, onClick = { open(favs, i) }, onToggleFavorite = { vm.toggleFavorite(ch) }, now = now)
             }
         }
 
@@ -81,7 +84,7 @@ fun FavoritesScreen(vm: AppViewModel, onOpenSeries: (Playlist, Channel) -> Unit)
             }
         } else {
             itemsIndexed(recents) { i, ch ->
-                ChannelRow(ch, isFavorite = vm.isFavorite(ch), onClick = { open(recents, i) }, onToggleFavorite = { vm.toggleFavorite(ch) })
+                ChannelRow(ch, isFavorite = vm.isFavorite(ch), onClick = { open(recents, i) }, onToggleFavorite = { vm.toggleFavorite(ch) }, now = now)
             }
         }
     }

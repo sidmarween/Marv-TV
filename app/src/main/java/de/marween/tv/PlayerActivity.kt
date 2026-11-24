@@ -171,17 +171,24 @@ class PlayerActivity : ComponentActivity() {
         applyHeaders(ch)
         Store.addRecent(ch)
         val title = if (ch.kind == Kind.LIVE && items.size > 1) "${i + 1}   ${ch.name}" else ch.name
-        showOverlay(title, 4000)
+        val (cur, next) = if (ch.kind == Kind.LIVE) Epg.nowNext(ch) else (null to null)
+        val epgText = listOfNotNull(
+            cur?.let { "Jetzt: ${fmt(it.start)}–${fmt(it.end)}  ${it.title}" },
+            next?.let { "Danach: ${fmt(it.start)}  ${it.title}" },
+        ).joinToString("\n")
+        showOverlay(if (epgText.isBlank()) title else "$title\n$epgText", if (epgText.isBlank()) 4000L else 6000L)
 
         epgJob?.cancel()
         val client = xtream
-        if (client != null && ch.kind == Kind.LIVE && ch.streamId > 0) {
+        if (epgText.isBlank() && client != null && ch.kind == Kind.LIVE && ch.streamId > 0) {
             epgJob = lifecycleScope.launch {
                 val epg = withContext(Dispatchers.IO) { runCatching { client.nowPlaying(ch.streamId) }.getOrNull() }
                 if (!epg.isNullOrBlank() && currentIndex() == i) showOverlay("$title\n$epg", 7000)
             }
         }
     }
+
+    private fun fmt(ms: Long): String = java.text.SimpleDateFormat("HH:mm", java.util.Locale.GERMANY).format(java.util.Date(ms))
 
     private fun zap(delta: Int) {
         val p = player ?: return
